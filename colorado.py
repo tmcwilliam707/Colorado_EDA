@@ -1,5 +1,7 @@
 import pandas as pd
-from fuzzywuzzy import fuzz
+from geopy.distance import geodesic
+import numpy as np
+from scipy.spatial import cKDTree
 
 
 pd.set_option('display.max_rows', 100) 
@@ -25,46 +27,37 @@ df2['complete_addr'] = df2['street_number'].astype(str) + " " + df2['street'].as
 
 
 
-'''
 
 
-min_length = min(len(df1), len(df2), len(df3))
+# Convert the latitudes and longitudes to numpy arrays
+coords_df1 = np.array(list(zip(df1['latitude'].astype(float), df1['longitude'].astype(float))))
+coords_df2 = np.array(list(zip(df2['latitude'].astype(float), df2['longitude'].astype(float))))
+coords_df3 = np.array(list(zip(df3['latitude'].astype(float), df3['longitude'].astype(float))))
 
-results_list = [{'df1_addr': df1['complete_addr'].iloc[i], 
-                 'df2_addr': df2['complete_addr'].iloc[i], 
-                 'df3_addr': df3['complete_addr'].iloc[i], 
-                 'df1_df3_score': fuzz.ratio(df1['complete_addr'].iloc[i], df3['complete_addr'].iloc[i]), 
-                 'df2_df3_score': fuzz.ratio(df2['complete_addr'].iloc[i], df3['complete_addr'].iloc[i])} 
-                for i in range(min_length)]
+#Create a KDTree for df3
+tree = cKDTree(coords_df3)
 
-results = pd.DataFrame(results_list)
+#Find the closest point in df3 for each point in df1 and df2'
+df1['closest_df3_index'], df1['distance_to_closest_df3'] = tree.query(coords_df1, k=1)
+df2['closest_df3_index'], df2['distance_to_closest_df3'] = tree.query(coords_df2, k=1)
 
-print(results)
+#Convert the distances to kilometers'
+df1['distance_to_closest_df3'] = df1['distance_to_closest_df3'].apply(lambda x: geodesic(x).kilometers)
+df2['distance_to_closest_df3'] = df2['distance_to_closest_df3'].apply(lambda x: geodesic(x).kilometers)
 
-
-results.to_csv('/Users/taylormcwilliam/Documents/GitHub/eda_apple/levenshtein_results.csv', index=False)
-
-'''
-
-from fuzzywuzzy import fuzz
-
-
-df1['lat_long'] = df1['latitude'].astype(str) + ',' + df1['longitude'].astype(str)
-df2['lat_long'] = df2['latitude'].astype(str) + ',' + df2['longitude'].astype(str)
-df3['lat_long'] = df3['latitude'].astype(str) + ',' + df3['longitude'].astype(str)
+# Calculate the total distance for each dataframe
+df1['total_distance'] = df1['distance_to_closest_df3'].sum()
+df2['total_distance'] = df2['distance_to_closest_df3'].sum()
 
 
-results_list = [{'df1_lat_long': df1['lat_long'].iloc[i], 
-                 'df2_lat_long': df2['lat_long'].iloc[i], 
-                 'df3_lat_long': df3['lat_long'].iloc[i], 
-                 'df1_df3_score': fuzz.ratio(df1['lat_long'].iloc[i], df3['lat_long'].iloc[i]), 
-                 'df2_df3_score': fuzz.ratio(df2['lat_long'].iloc[i], df3['lat_long'].iloc[i])} 
-                for i in range(min(len(df1), len(df2), len(df3)))]
+# Concatenate the dataframes
+df = pd.concat([df1, df2, df3], ignore_index=True)
+
+# Drop the columns with all null values
+df = df.dropna(how='all', axis=1)
+
+# Write df to a CSV file
+#df.to_csv('location_kerneys_merged.csv', index=False)
 
 
-
-
-results = pd.DataFrame(results_list)
-
-
-results.to_csv('/Users/taylormcwilliam/Documents/GitHub/eda_apple/levenshtein_loc_results.csv', index=False)
+print(df)
